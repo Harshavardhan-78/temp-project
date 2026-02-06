@@ -6,10 +6,10 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 # --- PAGE DEFINITIONS ---
-dashboard = st.Page("CMDSS/pages/Dashboard.py", title="Dashboard", icon="📊")
-predictor = st.Page("CMDSS/pages/Predictor.py", title="Predictor", icon="🔮")
-home = st.Page("CMDSS/pages/home.py", title="Home", icon="🏠")
-data_entry = st.Page("CMDSS/pages/data_entry.py", title="Data Entry", icon="📝")
+dashboard = st.Page("pages/Dashboard.py", title="Dashboard", icon="📊")
+predictor = st.Page("pages/Predictor.py", title="Predictor", icon="🔮")
+home = st.Page("pages/home.py", title="Home", icon="🏠")
+data_entry = st.Page("pages/data_entry.py", title="Data Entry", icon="📝")
 
 # --- NAVIGATION CONTROL ---
 if st.session_state.logged_in:
@@ -21,5 +21,6 @@ if st.session_state.logged_in:
 else:
     # Sidebar ONLY shows Home until login
     pg = st.navigation([home])
+
 
 pg.run()
