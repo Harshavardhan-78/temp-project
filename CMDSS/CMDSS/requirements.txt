@@ -1,9 +1,0 @@
-streamlit
-
-pymongo
-
-dnspython
-
-pandas
-
-scikit-learn
