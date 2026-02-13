@@ -1,62 +1,44 @@
-def encode_inputs(weather, exams, region):
-    weather_map = {"Sunny": 0, "Rainy": 1, "Cloudy": 2}
-    exams_map = {"None": 0, "Midterms": 1, "Finals": 2}
-    region_map = {"Urban": 0, "Rural": 1}
-
-    return [
-        weather_map[weather],
-        exams_map[exams],
-        region_map[region]
-    ]
-
+import pandas as pd
 def generate_historical_insights(df):
     insights = []
 
     if df.empty:
-        return ["Not enough historical data"]
+        return ["No data available."]
 
-    avg_qty = df["quantity"].mean()
+    top_item = df.groupby("item")["quantity"].sum().idxmax()
+    insights.append(f"🔥 Most popular item: {top_item}")
 
-    weather_trend = df.groupby(["weather", "item"])["quantity"].mean()
-    for (w, item), qty in weather_trend.items():
-        if qty > avg_qty:
-            insights.append(f"📈 {item} sells more during {w} weather")
+    total_sales = df["quantity"].sum()
+    insights.append(f"📦 Total units sold: {total_sales}")
 
-    exam_trend = df.groupby(["exams", "item"])["quantity"].mean()
-    for (e, item), qty in exam_trend.items():
-        if e != "None" and qty > avg_qty:
-            insights.append(f"📚 During {e}, demand for {item} increases")
+    rainy_sales = df[df["weather"] == "Rainy"]["quantity"].sum()
+    if rainy_sales > 0:
+        insights.append("🌧 Rainy days increase demand.")
 
-    low_items = (
-        df.groupby("item")["quantity"]
-        .mean()
-        .sort_values()
-        .head(3)
-        .index
-    )
+    return insights
+def generate_menu_plan(df):
 
-    for item in low_items:
-        insights.append(f"⚠️ Reduce or replace {item} (low demand historically)")
+    df["date"] = pd.to_datetime(df["date"])
+    df["day_name"] = df["date"].dt.day_name()
 
-    return list(set(insights))
+    grouped = df.groupby(
+        ["day_name", "time_slot", "item"]
+    )["quantity"].sum().reset_index()
 
-def recommend_tomorrow_menu(df, weather, exams):
-    if df.empty:
-        return ["Insufficient data"]
+    menu_plan = {}
 
-    filtered = df[
-        (df["weather"] == weather) &
-        (df["exams"] == exams)
-    ]
+    for _, row in grouped.iterrows():
+        day = row["day_name"]
+        slot = row["time_slot"]
+        item = row["item"]
 
-    if filtered.empty:
-        filtered = df
+        if day not in menu_plan:
+            menu_plan[day] = {}
 
-    return (
-        filtered.groupby("item")["quantity"]
-        .mean()
-        .sort_values(ascending=False)
-        .head(5)
-        .index
-        .tolist()
-    )
+        if slot not in menu_plan[day]:
+            menu_plan[day][slot] = []
+
+        menu_plan[day][slot].append(item)
+
+    return menu_plan
+
