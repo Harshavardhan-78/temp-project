@@ -18,23 +18,29 @@ if df.empty:
 
 df["quantity"] = df["quantity"].astype(int)
 df["date"] = pd.to_datetime(df["date"])
+col1, col2, col3 = st.columns(3)
 
-st.metric("Total Units Sold", df["quantity"].sum())
+col1.metric("📦 Total Units Sold", df["quantity"].sum())
+col2.metric("📅 Active Days", df["date"].nunique())
+col3.metric("🍽 Unique Items", df["item"].nunique())
 
-st.subheader("Insights")
-for insight in generate_historical_insights(df):
-    st.success(insight)
+st.markdown("---")
 
-st.subheader("Item-wise Sales")
-st.bar_chart(df.groupby("item")["quantity"].sum())
+# Better grouped charts
+import plotly.express as px
 
-st.subheader("Daily Trend")
-st.line_chart(df.groupby("date")["quantity"].sum())
-st.subheader("📅 Recommended Weekly Menu Plan")
+st.subheader("📊 Item-wise Sales")
 
-menu_plan = generate_menu_plan(df)
+item_sales = df.groupby("item")["quantity"].sum().reset_index()
+fig1 = px.bar(item_sales, x="item", y="quantity",
+              color="quantity",
+              title="Total Sales per Item")
+st.plotly_chart(fig1, use_container_width=True)
 
-for day, slots in menu_plan.items():
-    st.markdown(f"### {day}")
-    for slot, items in slots.items():
-        st.write(f"**{slot}:** {', '.join(items)}")
+st.subheader("📈 Daily Trend")
+
+daily_sales = df.groupby("date")["quantity"].sum().reset_index()
+fig2 = px.line(daily_sales, x="date", y="quantity",
+               markers=True,
+               title="Daily Sales Trend")
+st.plotly_chart(fig2, use_container_width=True)
