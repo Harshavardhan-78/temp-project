@@ -5,11 +5,11 @@ import math
 import pickle
 import datetime
 
-with open("models/rf_regressor.pkl", "rb") as f:
+with open("CMDSS/models/rf_regressor.pkl", "rb") as f:
 
     model = pickle.load(f)
 
-with open("models/encoders.pkl", "rb") as f:
+with open("CMDSS/models/encoders.pkl", "rb") as f:
     encoders = pickle.load(f)
 
 st.title("🔮 Item-wise Weekly Demand Predictor")
@@ -156,4 +156,5 @@ if st.button("Predict Item-wise Demand"):
             st.write("• No strong historical pattern detected")
 
         st.write(" ")
+
 
