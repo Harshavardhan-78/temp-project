@@ -1,6 +1,5 @@
 import streamlit as st
 from utils.db_handler import get_db, fetch_sales_data
-from PIL import Image
 st.set_page_config(layout="wide")
 
 st.title("🍽 Smart Canteen Management Decision Support System")
