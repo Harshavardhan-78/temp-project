@@ -2,7 +2,7 @@ import streamlit as st
 from utils.db_handler import get_db, fetch_sales_data
 st.set_page_config(layout="wide")
 
-st.title("🍽 Smart Canteen Management Decision Support System")
+st.title("Smart Canteen Management Decision Support System")
 
 st.markdown("""
 ### Intelligent Demand Forecasting & Analytics Platform
@@ -155,5 +155,6 @@ else:
     if st.button("Logout"):
         del st.session_state["owner_id"]
         st.rerun()
+
 
 
