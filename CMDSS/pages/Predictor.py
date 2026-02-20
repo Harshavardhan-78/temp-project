@@ -184,4 +184,22 @@ if st.session_state["predicted_df"] is not None:
     medals = ["🥇", "🥈", "🥉"]
 
     for i, (_, row) in enumerate(result_df.head(3).iterrows()):
+
         st.success(f"{medals[i]} {row['Item']} → {row['Predicted Demand']} units")
+        st.markdown("---")
+    st.markdown("## 🧠 Data-Driven Insights")
+
+    for item in selected_items:
+
+        item_df = df[df["item"] == item]
+
+        weather_avg = item_df.groupby("weather")["quantity"].mean().sort_values(ascending=False)
+        exam_avg = item_df.groupby("exams")["quantity"].mean().sort_values(ascending=False)
+        slot_avg = item_df.groupby("time_slot")["quantity"].mean().sort_values(ascending=False)
+
+        st.markdown(f"### {item}")
+
+        st.write(f"• 🌤 Highest sales historically during **{weather_avg.index[0]}** weather")
+        st.write(f"• 📚 Peak demand observed during **{exam_avg.index[0]}**")
+        st.write(f"• 🕒 Most consumed in **{slot_avg.index[0]}** slot")
+        st.write("")
