@@ -1,160 +1,187 @@
 import streamlit as st
 import pandas as pd
-from utils.db_handler import fetch_sales_data
-import math
 import pickle
-import datetime
+import os
+import plotly.express as px
+from utils.db_handler import fetch_sales_data
 
-with open("CMDSS/models/rf_regressor.pkl", "rb") as f:
+st.set_page_config(page_title="Demand Predictor", layout="wide")
 
-    model = pickle.load(f)
+# ------------------ SESSION STATE INIT ------------------
 
-with open("CMDSS/models/encoders.pkl", "rb") as f:
+if "predicted_df" not in st.session_state:
+    st.session_state["predicted_df"] = None
+
+# ------------------ LOAD MODELS ------------------
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_DIR = os.path.join(BASE_DIR, "..", "models")
+
+with open(os.path.join(MODEL_DIR, "rf_model.pkl"), "rb") as f:
+    rf = pickle.load(f)
+
+with open(os.path.join(MODEL_DIR, "gb_model.pkl"), "rb") as f:
+    gb = pickle.load(f)
+
+with open(os.path.join(MODEL_DIR, "encoders.pkl"), "rb") as f:
     encoders = pickle.load(f)
 
-st.title("🔮 Item-wise Weekly Demand Predictor")
+# ------------------ SAFE ENCODE ------------------
+
+def safe_encode(column, value):
+    if value in encoders[column].classes_:
+        return encoders[column].transform([value])[0]
+    return encoders[column].transform([encoders[column].classes_[0]])[0]
+
+# ------------------ LOAD DATA ------------------
+
+@st.cache_data
+def load_data(owner_id):
+    return fetch_sales_data(owner_id)
+
+st.title("🔮 Smart Next-Day Demand Forecast")
 
 if "owner_id" not in st.session_state:
-    st.error("Please login")
+    st.error("Please login first.")
     st.stop()
 
-df = fetch_sales_data(st.session_state["owner_id"])
+df = load_data(st.session_state["owner_id"])
 
 if df.empty:
-    st.warning("No sales data available")
+    st.warning("No sales data available.")
     st.stop()
 
 df["date"] = pd.to_datetime(df["date"])
+df["exams"] = df["exams"].fillna("None")
+df = df.sort_values(["item", "date"])
 
-# Require minimum 7 days
-if df["date"].nunique() < 7:
-    st.warning("Minimum 7 days of data required.")
-    st.stop()
+# ------------------ CONTEXT INPUT ------------------
 
-st.subheader("📊 Historical Item Performance")
+st.subheader("📌 Tomorrow Context")
 
-weather = st.selectbox("Next Week Weather", ["Sunny", "Rainy", "Cloudy"])
-exams = st.selectbox("Next Week Exams", ["None", "Midterms", "Finals"])
-region = st.selectbox("Region", ["Urban", "Rural"])
-time_slot = st.selectbox("Time Slot", ["Morning", "Afternoon", "Evening", "Night"])
-day_of_week = st.selectbox("Day of Week", list(range(7)))
+col1, col2, col3, col4 = st.columns(4)
 
+with col1:
+    weather = st.selectbox("Weather", ["Sunny", "Rainy", "Cloudy"])
+with col2:
+    exams = st.selectbox("Exams", ["None", "Midterms", "Finals"])
+with col3:
+    region = st.selectbox("Region", ["Urban", "Rural"])
+with col4:
+    time_slot = st.selectbox("Time Slot", ["Morning", "Afternoon", "Evening", "Night"])
 
-if st.button("Predict Item-wise Demand"):
+# ------------------ PREDICT BUTTON ------------------
+
+if st.button("🚀 Predict Tomorrow Demand", use_container_width=True):
 
     results = []
     items = df["item"].unique()
 
+    last_date = df["date"].max()
+    next_date = last_date + pd.Timedelta(days=1)
+
+    day_of_week = next_date.weekday()
+    week_of_year = next_date.isocalendar().week
+
     for item in items:
 
         item_data = df[df["item"] == item].sort_values("date")
+        quantities = item_data["quantity"].values
 
-        rolling_avg = item_data["quantity"].tail(3).mean()
+        lag_1 = quantities[-1] if len(quantities) >= 1 else 0
+        lag_2 = quantities[-2] if len(quantities) >= 2 else 0
+        lag_3 = quantities[-3] if len(quantities) >= 3 else 0
+        lag_7 = quantities[-7] if len(quantities) >= 7 else 0
+
+        rolling_avg_3 = item_data["quantity"].tail(3).mean()
+        rolling_avg_7 = item_data["quantity"].tail(7).mean()
+        rolling_std_7 = item_data["quantity"].tail(7).std()
+        rolling_std_7 = 0 if pd.isna(rolling_std_7) else rolling_std_7
 
         input_data = {
-            "weather": encoders["weather"].transform([weather])[0],
-            "exams": encoders["exams"].transform([exams])[0],
-            "region": encoders["region"].transform([region])[0],
-            "time_slot": encoders["time_slot"].transform([time_slot])[0],
+            "weather": safe_encode("weather", weather),
+            "exams": safe_encode("exams", exams),
+            "region": safe_encode("region", region),
+            "time_slot": safe_encode("time_slot", time_slot),
             "day_of_week": day_of_week,
-            "item": encoders["item"].transform([item])[0],
-            "rolling_avg_3": rolling_avg
+            "week_of_year": week_of_year,
+            "item": safe_encode("item", item),
+            "lag_1": lag_1,
+            "lag_2": lag_2,
+            "lag_3": lag_3,
+            "lag_7": lag_7,
+            "rolling_avg_3": rolling_avg_3,
+            "rolling_avg_7": rolling_avg_7,
+            "rolling_std_7": rolling_std_7
         }
 
-        input_df = pd.DataFrame([input_data])
+        feature_order = [
+            "weather", "exams", "region", "time_slot",
+            "day_of_week", "week_of_year", "item",
+            "lag_1", "lag_2", "lag_3", "lag_7",
+            "rolling_avg_3", "rolling_avg_7", "rolling_std_7"
+        ]
 
-        predicted = model.predict(input_df)[0]
-        predicted = max(0, round(predicted))
+        input_df = pd.DataFrame([input_data])[feature_order]
 
-        # Convert to business label
-        if predicted < df["quantity"].quantile(0.33):
-            level = "LOW"
-            recommendation = "Reduce Stock"
-        elif predicted < df["quantity"].quantile(0.66):
-            level = "MEDIUM"
-            recommendation = "Maintain Stock"
-        else:
-            level = "HIGH"
-            recommendation = "Stock More"
+        rf_pred = rf.predict(input_df)[0]
+        gb_pred = gb.predict(input_df)[0]
 
-        # Trend
-        if len(item_data) >= 6:
-            recent = item_data.tail(3)["quantity"].mean()
-            older = item_data.head(3)["quantity"].mean()
+        predicted = max(0, round((rf_pred + gb_pred) / 2))
 
-            if recent > older:
-                trend = "📈 Increasing"
-            elif recent < older:
-                trend = "📉 Decreasing"
-            else:
-                trend = "➖ Stable"
-        else:
-            trend = "➖ Stable"
+        results.append({"Item": item, "Predicted Demand": predicted})
 
-        results.append({
-            "Item": item,
-            "Predicted Demand": predicted,
-            "Demand Level": level,
-            "Trend": trend,
-            "Recommendation": recommendation
-        })
+    st.session_state["predicted_df"] = (
+        pd.DataFrame(results)
+        .sort_values("Predicted Demand", ascending=False)
+    )
 
-    result_df = pd.DataFrame(results)
-    result_df = result_df.sort_values(by="Predicted Demand", ascending=False)
+# ------------------ DISPLAY RESULTS (Persistent) ------------------
 
-    st.subheader("📊 Decision Support Summary")
-    st.dataframe(result_df, use_container_width=True)
+if st.session_state["predicted_df"] is not None:
 
-    
-    st.markdown("### 🏆 Top Performing Items")
+    result_df = st.session_state["predicted_df"]
+
+    st.markdown("## 📊 Forecast Summary")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🔥 Highest Demand", result_df.iloc[0]["Predicted Demand"])
+    col2.metric("📦 Total Demand", result_df["Predicted Demand"].sum())
+    col3.metric("📈 Avg Demand", round(result_df["Predicted Demand"].mean(), 1))
+
+    # -------- FILTER --------
+
+    selected_items = st.multiselect(
+        "Filter Items",
+        result_df["Item"],
+        default=result_df["Item"]
+    )
+
+    filtered_df = result_df[result_df["Item"].isin(selected_items)]
+
+    # -------- VIEW MODE --------
+
+    view_mode = st.radio("View Mode", ["Table", "Graph"], horizontal=True)
+
+    if view_mode == "Table":
+        st.dataframe(filtered_df, use_container_width=True)
+    else:
+        fig = px.bar(
+            filtered_df,
+            x="Item",
+            y="Predicted Demand",
+            text="Predicted Demand",
+            color="Predicted Demand",
+            color_continuous_scale="greens"
+        )
+        fig.update_traces(textposition="outside")
+        fig.update_layout(template="plotly_white")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # -------- TOP 3 --------
+
+    st.markdown("### 🏆 Top 3 High Demand Items")
     medals = ["🥇", "🥈", "🥉"]
 
     for i, (_, row) in enumerate(result_df.head(3).iterrows()):
-        st.success(
-            f"{medals[i]} {row['Item']} → {row['Predicted Demand']} units | "
-            f"{row['Demand Level']} | {row['Trend']} | {row['Recommendation']}"
-        )
-
-    # ---------------- REASONING ----------------
-
-    st.markdown("---")
-    st.markdown("### 🧠 Reasoning Behind Predictions")
-
-    for item in items:
-
-        item_df = df[df["item"] == item]
-        st.markdown(f"#### {item}")
-
-        reasons = []
-
-        avg_rainy = item_df[item_df["weather"] == "Rainy"]["quantity"].mean()
-        avg_sunny = item_df[item_df["weather"] == "Sunny"]["quantity"].mean()
-
-        if pd.notna(avg_rainy) and pd.notna(avg_sunny):
-            if avg_rainy > avg_sunny:
-                reasons.append("🌧 Rainy days historically increase sales")
-
-        avg_finals = item_df[item_df["exams"] == "Finals"]["quantity"].mean()
-        avg_none = item_df[item_df["exams"] == "None"]["quantity"].mean()
-
-        if pd.notna(avg_finals) and pd.notna(avg_none):
-            if avg_finals > avg_none:
-                reasons.append("📚 Exam periods boost demand")
-
-        avg_evening = item_df[item_df["time_slot"] == "Evening"]["quantity"].mean()
-        avg_overall = item_df["quantity"].mean()
-
-        if pd.notna(avg_evening):
-            if avg_evening > avg_overall:
-                reasons.append("🌇 Evening consumption higher than average")
-
-        if reasons:
-            st.markdown("**Reason:**")
-            for r in reasons:
-                st.write(f"• {r}")
-        else:
-            st.write("• No strong historical pattern detected")
-
-        st.write(" ")
-
-
+        st.success(f"{medals[i]} {row['Item']} → {row['Predicted Demand']} units")

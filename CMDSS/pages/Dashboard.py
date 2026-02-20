@@ -1,46 +1,136 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from utils.db_handler import fetch_sales_data
-from utils.processor import generate_historical_insights
-from utils.processor import generate_menu_plan
 
-st.title("📊 Smart Dashboard")
+st.set_page_config(layout="wide")
+
+st.title("📊 Canteen Performance Dashboard")
 
 if "owner_id" not in st.session_state:
-    st.error("Please login")
+    st.error("Please login first.")
     st.stop()
 
 df = fetch_sales_data(st.session_state["owner_id"])
 
 if df.empty:
-    st.warning("No sales data available")
+    st.warning("No sales data available.")
     st.stop()
 
-df["quantity"] = df["quantity"].astype(int)
 df["date"] = pd.to_datetime(df["date"])
-col1, col2, col3 = st.columns(3)
 
-col1.metric("📦 Total Units Sold", df["quantity"].sum())
-col2.metric("📅 Active Days", df["date"].nunique())
-col3.metric("🍽 Unique Items", df["item"].nunique())
+# ------------------ KPI SECTION ------------------
+
+st.markdown("## 📌 Key Metrics")
+
+col1, col2, col3, col4 = st.columns(4)
+
+total_sales = df["quantity"].sum()
+avg_sales = round(df["quantity"].mean(), 2)
+top_item = df.groupby("item")["quantity"].sum().idxmax()
+total_items = df["item"].nunique()
+
+col1.metric("📦 Total Units Sold", total_sales)
+col2.metric("📈 Avg Daily Demand", avg_sales)
+col3.metric("🏆 Top Performing Item", top_item)
+col4.metric("🍽 Total Menu Items", total_items)
 
 st.markdown("---")
 
-# Better grouped charts
-import plotly.express as px
+# ------------------ FILTERS ------------------
 
-st.subheader("📊 Item-wise Sales")
+st.markdown("## 🎛 Filter Data")
 
-item_sales = df.groupby("item")["quantity"].sum().reset_index()
-fig1 = px.bar(item_sales, x="item", y="quantity",
-              color="quantity",
-              title="Total Sales per Item")
-st.plotly_chart(fig1, use_container_width=True)
+colf1, colf2 = st.columns(2)
 
-st.subheader("📈 Daily Trend")
+with colf1:
+    selected_items = st.multiselect(
+        "Select Items",
+        df["item"].unique(),
+        default=df["item"].unique()
+    )
 
-daily_sales = df.groupby("date")["quantity"].sum().reset_index()
-fig2 = px.line(daily_sales, x="date", y="quantity",
-               markers=True,
-               title="Daily Sales Trend")
-st.plotly_chart(fig2, use_container_width=True)
+with colf2:
+    selected_weather = st.multiselect(
+        "Weather Condition",
+        df["weather"].unique(),
+        default=df["weather"].unique()
+    )
+
+filtered_df = df[
+    (df["item"].isin(selected_items)) &
+    (df["weather"].isin(selected_weather))
+]
+
+st.markdown("---")
+
+# ------------------ VISUALIZATION ------------------
+
+st.markdown("## 📈 Demand Trends")
+
+view = st.radio("Select View", ["Time Series", "Item Comparison"], horizontal=True)
+
+if view == "Time Series":
+    daily = filtered_df.groupby("date")["quantity"].sum().reset_index()
+
+    fig = px.line(
+        daily,
+        x="date",
+        y="quantity",
+        markers=True,
+        title="Daily Demand Trend"
+    )
+
+    fig.update_layout(template="plotly_white")
+    st.plotly_chart(fig, use_container_width=True)
+
+else:
+    item_summary = filtered_df.groupby("item")["quantity"].sum().reset_index()
+
+    fig = px.bar(
+        item_summary,
+        x="item",
+        y="quantity",
+        text="quantity",
+        color="quantity",
+        color_continuous_scale="greens",
+        title="Item-wise Sales"
+    )
+
+    fig.update_traces(textposition="outside")
+    fig.update_layout(template="plotly_white")
+    st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("---")
+
+# ------------------ CONTEXT INSIGHTS ------------------
+
+st.markdown("## 🧠 Context Insights")
+
+colc1, colc2 = st.columns(2)
+
+with colc1:
+    weather_avg = filtered_df.groupby("weather")["quantity"].mean().reset_index()
+    fig_weather = px.bar(
+        weather_avg,
+        x="weather",
+        y="quantity",
+        color="quantity",
+        color_continuous_scale="blues",
+        title="Average Demand by Weather"
+    )
+    fig_weather.update_layout(template="plotly_white")
+    st.plotly_chart(fig_weather, use_container_width=True)
+
+with colc2:
+    exam_avg = filtered_df.groupby("exams")["quantity"].mean().reset_index()
+    fig_exam = px.bar(
+        exam_avg,
+        x="exams",
+        y="quantity",
+        color="quantity",
+        color_continuous_scale="oranges",
+        title="Average Demand by Exam Status"
+    )
+    fig_exam.update_layout(template="plotly_white")
+    st.plotly_chart(fig_exam, use_container_width=True)
