@@ -94,7 +94,7 @@ if "owner_id" in st.session_state:
     if role == "admin":
         pg = st.navigation({
             "👑 Admin": [admin],
-            "📊 Operations": [dashboard, predictor, data_entry],
+            
             "👤 Account": [home]
         })
     else:
@@ -106,5 +106,6 @@ else:
     pg = st.navigation([home])
 
 pg.run()
+
 
 
