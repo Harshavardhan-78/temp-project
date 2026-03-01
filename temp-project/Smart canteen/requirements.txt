@@ -1,0 +1,13 @@
+streamlit
+
+pymongo
+
+dnspython
+
+pandas
+
+scikit-learn
+
+plotly
+
+numpy
