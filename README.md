@@ -230,11 +230,6 @@ streamlit run main.py
 
 Developed for academic and research purposes.
 
----
 
-## 👨‍💻 Developed By
-
-Smart Canteen Management Decision Support System
-AI-Based Decision Support Project
 
 
